@@ -1,0 +1,15 @@
+services:
+  claude-code:
+    image: ghcr.io/hanlu1215/claude-code-docker:latest
+    container_name: claude-code
+
+    init: true
+
+    environment:
+      DEBIAN_FRONTEND: noninteractive
+
+    volumes:
+      - ./config:/home/developer/.claude
+      - ./workspace:/workspace
+
+    restart: unless-stopped

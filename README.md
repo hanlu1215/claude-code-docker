@@ -66,8 +66,8 @@ docker run --rm ghcr.io/hanlu1215/claude-code-docker:latest sh -c "whoami && pwd
 ### 3.1 准备两个目录（只需一次）
 
 ```bash
-mkdir -p ~/claude-config       # 存放 CC 的配置/登录态，挂载后重建容器不用重新登录
-mkdir -p ~/projects/my-project # 你的项目代码
+mkdir -p ~/config              # 存放 CC 的配置/登录态，挂载后重建容器不用重新登录，可以把之前配置好的settings.json放这里
+mkdir -p ~/projects            # 你的项目代码
 ```
 
 ### 3.2 启动容器（不写代理）
@@ -76,15 +76,15 @@ mkdir -p ~/projects/my-project # 你的项目代码
 docker run -d \
   --init \
   --name claude-code \
-  -v "$HOME/claude-config:/home/developer/.claude" \
-  -v "$HOME/projects/my-project:/workspace" \
+  -v "$HOME/config:/home/developer/.claude" \
+  -v "$HOME/projects:/workspace" \
   ghcr.io/hanlu1215/claude-code-docker:latest
 ```
 
 - `-d` 后台运行；容器只跑 `sleep infinity`，用来待命；
 - `--init` 注入 tini 作为 PID 1，负责转发信号、回收僵尸进程；
-- `-v ~/claude-config:...` 持久化配置和登录态；
-- `-v ~/projects/my-project:/workspace` 把你的项目映射进容器。
+- `-v ~/config:...` 持久化配置和登录态；
+- `-v ~/projects:/workspace` 把你的项目映射进容器。
 
 > **为什么必须加 `--init`？** 容器主进程是 `sleep infinity`，它被当作 PID 1 运行。
 > 作为 PID 1 的进程默认会忽略没有注册处理器的信号，`docker stop` 发来的 SIGTERM 会被吞掉，
@@ -99,7 +99,7 @@ cd /workspace
 claude
 ```
 
-第一次运行 `claude` 会提示登录/配置，配置会写进挂载的 `~/claude-config`，以后不用重复。
+第一次运行 `claude` 会提示登录/配置，配置会写进挂载的 `~/config`，以后不用重复。
 
 ### 3.4 需要联网/装包时，在容器内开代理
 
@@ -128,6 +128,38 @@ docker exec -it claude-code bash
 
 > 重建容器时别忘了保留 `--init`，否则 `docker stop` 又会卡在 10 秒宽限期后强杀。
 
+### 3.6 用 docker-compose（推荐，免记长命令）
+
+仓库根目录已带 `docker-compose.yml`，把 `config/` 和 `workspace/` 放在它旁边即可：
+
+```
+你的目录/
+├── docker-compose.yml
+├── config/      → /home/developer/.claude
+└── workspace/   → /workspace
+```
+
+`docker-compose.yml` 已包含 `--init`（即 `init: true`）、两个挂载和 `restart: unless-stopped`，所以只需：
+
+```bash
+cd 你的目录
+
+docker compose up -d        # 启动（老版 Compose 用 docker-compose up -d）
+docker compose ps           # 查看状态
+docker exec -it claude-code bash
+```
+
+> 相对路径是相对 **Compose 文件所在目录**解析的，所以整个目录搬到别处也不用改配置。
+
+首次可先 `docker compose up`（不加 `-d`）前台看启动日志，确认无误后 `Ctrl+C`，再 `docker compose up -d`。
+
+确认参数真的生效：
+
+```bash
+docker inspect claude-code --format '{{.Config.Init}}'    # 返回 true 说明 init 已生效
+docker inspect claude-code --format '{{json .Mounts}}'    # 核对两个挂载路径
+```
+
 ---
 
 ## 4. 本地重新构建镜像
@@ -151,8 +183,8 @@ docker build \
 docker run -d \
   --init \
   --name claude-code \
-  -v "$HOME/claude-config:/home/developer/.claude" \
-  -v "$HOME/projects/my-project:/workspace" \
+  -v "$HOME/config:/home/developer/.claude" \
+  -v "$HOME/projects:/workspace" \
   claude-code:latest
 ```
 
@@ -179,11 +211,13 @@ git push
 | 操作 | 命令 |
 | --- | --- |
 | 拉最新镜像 | `docker pull ghcr.io/hanlu1215/claude-code-docker:latest` |
-| 查 CC 版本 | `docker run --rm <镜像> claude --version` |
+| 查 CC 版本 | `docker run --rm ghcr.io/hanlu1215/claude-code-docker:latest claude --version` |
 | 启动容器 | `docker start claude-code` |
-| 重建容器 | `docker run -d --init --name claude-code -v "$HOME/claude-config:/home/developer/.claude" -v "$HOME/projects/my-project:/workspace" <镜像>` |
+| 重建容器 | `docker run -d --init --name claude-code -v "$HOME/config:/home/developer/.claude" -v "$HOME/projects:/workspace" <镜像>` |
 | 进入容器 | `docker exec -it claude-code bash` |
 | 运行 CC | `cd /workspace && claude` |
+| Compose 启动 | `docker compose up -d`（在 `docker-compose.yml` 所在目录） |
+| Compose 停止 | `docker compose down` |
 | 停止容器 | `docker stop claude-code` |
 | 删除容器 | `docker rm -f claude-code` |
 | 本地构建 | `docker build --build-arg ... -t claude-code:latest .` |
