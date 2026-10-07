@@ -2,6 +2,7 @@ services:
   claude-code:
     image: ghcr.io/hanlu1215/claude-code-docker:latest
     container_name: claude-code
+    hostname: claude
 
     init: true
 

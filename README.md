@@ -76,6 +76,7 @@ mkdir -p ~/projects            # 你的项目代码
 docker run -d \
   --init \
   --name claude-code \
+  --hostname claude \
   -v "$HOME/config:/home/developer/.claude" \
   -v "$HOME/projects:/workspace" \
   ghcr.io/hanlu1215/claude-code-docker:latest
@@ -83,6 +84,7 @@ docker run -d \
 
 - `-d` 后台运行；容器只跑 `sleep infinity`，用来待命；
 - `--init` 注入 tini 作为 PID 1，负责转发信号、回收僵尸进程；
+- `--hostname claude` 让容器内的主机名显示为 `claude`（跟 `--name` 无关，`--name` 只影响宿主机上的容器名）；
 - `-v ~/config:...` 持久化配置和登录态；
 - `-v ~/projects:/workspace` 把你的项目映射进容器。
 
@@ -139,7 +141,7 @@ docker exec -it claude-code bash
 └── workspace/   → /workspace
 ```
 
-`docker-compose.yml` 已包含 `--init`（即 `init: true`）、两个挂载和 `restart: unless-stopped`，所以只需：
+`docker-compose.yml` 已包含 `--init`（即 `init: true`）、`hostname: claude`、两个挂载和 `restart: unless-stopped`，所以只需：
 
 ```bash
 cd 你的目录
@@ -156,8 +158,9 @@ docker exec -it claude-code bash
 确认参数真的生效：
 
 ```bash
-docker inspect claude-code --format '{{.Config.Init}}'    # 返回 true 说明 init 已生效
-docker inspect claude-code --format '{{json .Mounts}}'    # 核对两个挂载路径
+docker inspect claude-code --format '{{.Config.Init}}'        # 返回 true 说明 init 已生效
+docker inspect claude-code --format '{{.Config.Hostname}}'    # 返回 claude 说明主机名已生效
+docker inspect claude-code --format '{{json .Mounts}}'        # 核对两个挂载路径
 ```
 
 ---
@@ -166,9 +169,16 @@ docker inspect claude-code --format '{{json .Mounts}}'    # 核对两个挂载�
 
 需要代理才能构建（不然拉包/安装容易失败）。代理只在构建期生效，不会写进最终镜像。
 
-```bash
-cd E:\AI-AGENT\claude-code-docker   # 或 Linux 下的对应目录
+先拿到源码（已经克隆过就直接 `cd claude-code-docker`）：
 
+```bash
+git clone https://github.com/hanlu1215/claude-code-docker.git
+cd claude-code-docker
+```
+
+然后在该目录下构建（各平台命令相同，代理地址换成你自己的）：
+
+```bash
 docker build \
   --build-arg HTTP_PROXY=http://127.0.0.1:7890 \
   --build-arg HTTPS_PROXY=http://127.0.0.1:7890 \
@@ -177,18 +187,23 @@ docker build \
   -t claude-code:latest .
 ```
 
+> 上面是单行命令用 `\` 换行。**PowerShell 里要把行尾的 `\` 换成反引号 `` ` ``**（或者干脆写成一整行）；CMD 里也得写成一整行。
+
 构建完用第 2 节的方法验证，然后用本地镜像启动：
 
 ```bash
 docker run -d \
   --init \
   --name claude-code \
+  --hostname claude \
   -v "$HOME/config:/home/developer/.claude" \
   -v "$HOME/projects:/workspace" \
   claude-code:latest
 ```
 
 > 注意：`--build-arg` 是构建期临时变量，不会留在镜像里；只有 Dockerfile 里写 `ENV http_proxy=...` 才会被永久写入镜像，应避免。
+>
+> PowerShell 里没有 `$HOME`，请把 `$HOME/config` 换成 `$env:USERPROFILE\config`，`$HOME/projects` 同理。
 
 ### 4.1 升级 Claude Code
 
@@ -213,7 +228,7 @@ git push
 | 拉最新镜像 | `docker pull ghcr.io/hanlu1215/claude-code-docker:latest` |
 | 查 CC 版本 | `docker run --rm ghcr.io/hanlu1215/claude-code-docker:latest claude --version` |
 | 启动容器 | `docker start claude-code` |
-| 重建容器 | `docker run -d --init --name claude-code -v "$HOME/config:/home/developer/.claude" -v "$HOME/projects:/workspace" <镜像>` |
+| 重建容器 | `docker run -d --init --name claude-code --hostname claude -v "$HOME/config:/home/developer/.claude" -v "$HOME/projects:/workspace" <镜像>` |
 | 进入容器 | `docker exec -it claude-code bash` |
 | 运行 CC | `cd /workspace && claude` |
 | Compose 启动 | `docker compose up -d`（在 `docker-compose.yml` 所在目录） |
