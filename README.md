@@ -74,6 +74,7 @@ mkdir -p ~/projects/my-project # 你的项目代码
 
 ```bash
 docker run -d \
+  --init \
   --name claude-code \
   -v "$HOME/claude-config:/home/developer/.claude" \
   -v "$HOME/projects/my-project:/workspace" \
@@ -81,8 +82,14 @@ docker run -d \
 ```
 
 - `-d` 后台运行；容器只跑 `sleep infinity`，用来待命；
+- `--init` 注入 tini 作为 PID 1，负责转发信号、回收僵尸进程；
 - `-v ~/claude-config:...` 持久化配置和登录态；
 - `-v ~/projects/my-project:/workspace` 把你的项目映射进容器。
+
+> **为什么必须加 `--init`？** 容器主进程是 `sleep infinity`，它被当作 PID 1 运行。
+> 作为 PID 1 的进程默认会忽略没有注册处理器的信号，`docker stop` 发来的 SIGTERM 会被吞掉，
+> 只能等 10 秒宽限期结束后被 SIGKILL 强杀 —— 表现为 `docker stop` 卡住几秒或报错。
+> `--init` 让 tini 充当 PID 1，收到 SIGTERM 后正常转发，容器即可立即、干净地退出。
 
 ### 3.3 进入容器并用 CC
 
@@ -119,6 +126,8 @@ docker exec -it claude-code bash
 
 换项目时，把 `-v` 里的宿主目录换成新项目路径重建容器即可（`docker rm -f claude-code` 后重新 `docker run`）。
 
+> 重建容器时别忘了保留 `--init`，否则 `docker stop` 又会卡在 10 秒宽限期后强杀。
+
 ---
 
 ## 4. 本地重新构建镜像
@@ -140,6 +149,7 @@ docker build \
 
 ```bash
 docker run -d \
+  --init \
   --name claude-code \
   -v "$HOME/claude-config:/home/developer/.claude" \
   -v "$HOME/projects/my-project:/workspace" \
@@ -171,6 +181,7 @@ git push
 | 拉最新镜像 | `docker pull ghcr.io/hanlu1215/claude-code-docker:latest` |
 | 查 CC 版本 | `docker run --rm <镜像> claude --version` |
 | 启动容器 | `docker start claude-code` |
+| 重建容器 | `docker run -d --init --name claude-code -v "$HOME/claude-config:/home/developer/.claude" -v "$HOME/projects/my-project:/workspace" <镜像>` |
 | 进入容器 | `docker exec -it claude-code bash` |
 | 运行 CC | `cd /workspace && claude` |
 | 停止容器 | `docker stop claude-code` |
