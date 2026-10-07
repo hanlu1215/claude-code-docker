@@ -1,0 +1,75 @@
+name: Build and Push Docker Image
+
+on:
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      # 1. 获取代码
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # 2. 构建 Docker 镜像
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t claude-code-temp:latest \
+            .
+
+      # 3. 获取镜像中的 Claude Code 版本
+      - name: Get Claude Code version
+        run: |
+          VERSION=$(docker run --rm \
+            claude-code-temp:latest \
+            claude --version \
+            | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' \
+            | head -1)
+
+          echo "Claude Code version: $VERSION"
+
+          echo "CLAUDE_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      # 4. 登录 GHCR
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 5. 给镜像打标签
+      - name: Tag Docker image
+        run: |
+          IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+          docker tag \
+            claude-code-temp:latest \
+            $IMAGE:latest
+
+          docker tag \
+            claude-code-temp:latest \
+            $IMAGE:${{ env.CLAUDE_VERSION }}
+
+          docker tag \
+            claude-code-temp:latest \
+            $IMAGE:${{ github.sha }}
+
+      # 6. 推送所有标签
+      - name: Push Docker image
+        run: |
+          IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+          docker push $IMAGE:latest
+          docker push $IMAGE:${{ env.CLAUDE_VERSION }}
+          docker push $IMAGE:${{ github.sha }}
